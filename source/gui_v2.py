@@ -3,9 +3,8 @@ import pandas as pd
 import itertools
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
-    QPushButton, QTextBrowser, QTextEdit, QLineEdit
+    QPushButton, QTextBrowser, QTextEdit, QLineEdit, QScrollArea
 )
-from openpyxl import load_workbook
 
 class MyApp(QWidget):
 
@@ -21,11 +20,10 @@ class MyApp(QWidget):
         # self.setAcceptDrops(True)
 
         #레이아웃 설정
+        self.v_layout = QVBoxLayout()
         self.h1_layout = QHBoxLayout()
         self.h1_layout.addStretch(3)
         self.h2_layout = QHBoxLayout()
-        self.h3_layout = QHBoxLayout()
-        self.v_layout = QVBoxLayout()
         self.v_layout.addLayout(self.h1_layout)
         self.v_layout.addLayout(self.h2_layout)
 
@@ -37,42 +35,39 @@ class MyApp(QWidget):
 
         # 계산 버튼
         self.check_btn = QPushButton("계산", self)
-        # self.check_btn.move(350, 250)
         self.check_btn.clicked.connect(self.loadData)
         self.h1_layout.addWidget(self.check_btn)
 
         self.te = QTextEdit()
         self.te.setAcceptRichText(False)
-        # self.te.setReadOnly(False)
-        # self.te.setFocus()
         self.te.setFixedSize(500, 300)
-        # self.te.setStyleSheet("color: black; background-color: white;")
         self.h2_layout.addWidget(self.te)
 
-        self.tb = QTextBrowser()
-        self.tb.setAcceptRichText(True)
-        self.tb.setOpenExternalLinks(True)
-        # self.tb.setFixedSize(300, 300)
-        # self.tb.move(100, 150)
-        self.h2_layout.addWidget(self.tb)
+        # 출력 결과 만들 레이어(스크롤 추가)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+
+        self.scroll_content = QWidget()
+        self.scroll_layout = QVBoxLayout(self.scroll_content)
+        self.scroll_area.setWidget(self.scroll_content)
+        self.h2_layout.addWidget(self.scroll_area)
 
         self.setLayout(self.v_layout)
         self.show()
 
-    # def dragEnterEvent(self, event):
-    #     if event.mimeData().hasUrls():
-    #         event.accept()
-    #     else:
-    #         event.ignore()
+    # 해당 면적값 복사
+    def copy_clipboard(self, standard, comb):
+        comb_list = [x for x in comb.split(",")]
 
-    # def dropEvent(self, event):
-    #     labelword = ""
-    #     files = [u.toLocalFile() for u in event.mimeData().urls()]
-    #     for f in files:
-    #         print(f)
-    #         labelword += route_first + f
+        text_list = []
+        for k, df in self.data.items():
+            for comb in comb_list:
+                text_list.append(str(df.loc[comb]['area']))
+            text_list.append(str(df.loc[standard]['area']))
 
-    #     self.label.setText(labelword)
+        # 클립보드에 텍스트 복사
+        clipboard = QApplication.clipboard()
+        clipboard.setText("\n".join(text_list))
 
     # 중복 제거된 조합 찾기
     def find_combination(self, standard, unit_num):
@@ -81,7 +76,7 @@ class MyApp(QWidget):
         remaining_numbers = [num for num in index_list if num != standard]
         combinations = list(itertools.combinations(remaining_numbers, unit_num))
         
-        return combinations
+        return [tuple(sorted(comb)) for comb in combinations]
 
     # '2402', 0.05, 3
     def calculate_error(self, standard, error, unit_num):
@@ -114,27 +109,61 @@ class MyApp(QWidget):
             output = self.calculate_error(standard, error, 3)
             if output:
                 for k, v in output.items():
-                    result_dict[f"{standard} <=> ({k})"] = v
+                    result_dict[f"{standard}<=>({k})"] = v
 
         # output 출력 텍스트 형식
         str_list = []
-        str_list.append(f"오차범위: ±{error_text}%")
+        # str_list.append(f"오차범위: ±{error_text}%")
         if result_dict :
             # output 출력 텍스트 형식
             for comb, v in result_dict.items():
-                str_list.append(f"\n{comb}")
+                temp_list = []
+                temp_list.append(f"{comb}")
                 for k, error in v.items():
-                    str_list.append(f"{k} : {error:.2f}%")
-        else :
-            str_list.append("없음")
+                    temp_list.append(f"{k} : {error:.2f}%")
+                str_list.append(temp_list)
         
-        self.tb.clear()
-        self.tb.setText("\n".join(str_list))
+        # 이전에 만든 레이아웃 지우기
+        self.scroll_content.deleteLater()
 
+        self.scroll_content = QWidget()
+        self.scroll_layout = QVBoxLayout(self.scroll_content)
+        
+        # 오차내에 들어오는 값이 하나도 없는 경우
+        if len(str_list) == 0 :
+            qh = QHBoxLayout()
+            tb = QTextBrowser()
+            tb.setText("없음")
+            qh.addWidget(tb)
+            self.scroll_layout.addLayout(qh)
+        else :
+            for i, text_list in enumerate(str_list):
+                qh = QHBoxLayout()
+                tb = QTextBrowser()
+                tb.setAcceptRichText(True)
+                tb.setText("\n".join(text_list))
+                qh.addWidget(tb)
+
+                standard, comb = text_list[0].split("<=>", 1)
+                btn = QPushButton("복사", self)
+                btn.setObjectName(f'button{i}')
+                btn.clicked.connect(lambda _, s=standard, c=comb: self.copy_clipboard(s, c.replace("(", "").replace(")", "")))
+                qh.addWidget(btn)
+
+                self.scroll_layout.addLayout(qh)
+
+        self.scroll_area.setWidget(self.scroll_content)
+        self.scroll_area.update()
 
     def loadData(self):
         text = self.te.toPlainText()
-        row_list = text.split("\n")[2:]
+        row_list = text.split("\n")
+
+        column_names = row_list[1]
+        area_col_num = [i for i, name in enumerate(column_names.split("\t")) if name.strip() == "면적"]
+        if len(area_col_num) != 1:
+            self.tb.setText("면적 컬럼은 반드시 한개가 있어야 합니다.")
+            return
 
         # 정규 표현식
         material_regex = re.compile(r'^성분:\s')
@@ -144,17 +173,21 @@ class MyApp(QWidget):
         data = {}
         index_list = set()
         try:
-            for row in row_list:
+            for row in row_list[2:]:
                 if row == "" : continue
                 col_list = row.split("\t")
                 A_col = col_list[0]
-                D_col = col_list[3]
+                D_col = col_list[area_col_num[0]]
                 if material_regex.match(A_col):
                     material_name = A_col[4:].strip()
                     data[material_name] = pd.DataFrame(columns=['area'])
-                elif numbering_regex.match(A_col):
+                elif material_name and numbering_regex.match(A_col):
+                    if not D_col : 
+                        del data[material_name]
+                        material_name = None
+                        continue
                     numbering = A_col[:4].strip()
-                    data[material_name].loc[numbering] = float(D_col)
+                    data[material_name].loc[numbering] = int(D_col)
                     index_list.add(numbering)
         except:
             self.tb.setText("데이터 형식이 맞지 않습니다.")
