@@ -13,7 +13,7 @@ class MyApp(QWidget):
       self.initUI()
 
     def initUI(self):
-        self.setWindowTitle('멀티크로 면적 오차 계산')
+        self.setWindowTitle('20240909.v2 멀티크로 면적 오차 계산')
         # self.setWindowIcon(QIcon('resources/faviconV2.png'))
         self.setGeometry(1000, 200, 800, 300)
         #드래그 드롭을 활성화하려면 True로 변경할 것!
@@ -156,13 +156,24 @@ class MyApp(QWidget):
         self.scroll_area.update()
 
     def loadData(self):
+        # 에러를 기입하기 위한 text box
+        self.qh = QHBoxLayout()
+        self.tb = QTextBrowser()
+        self.qh.addWidget(self.tb)
+        self.scroll_layout.addLayout(self.qh)
+
         text = self.te.toPlainText()
         row_list = text.split("\n")
 
-        column_names = row_list[1]
+        if len(row_list) > 1:
+            column_names = row_list[1]
+        else :
+            self.tb.setText("[error] 올바른 데이터를 넣어주세요.\n")
+            return
+        
         area_col_num = [i for i, name in enumerate(column_names.split("\t")) if name.strip() == "면적"]
         if len(area_col_num) != 1:
-            self.tb.setText("면적 컬럼은 반드시 한개가 있어야 합니다.")
+            self.tb.setText("[error] '면적' 컬럼은 반드시 한개가 있어야 합니다.")
             return
 
         # 정규 표현식
@@ -189,14 +200,17 @@ class MyApp(QWidget):
                     numbering = A_col[:4].strip()
                     data[material_name].loc[numbering] = int(D_col)
                     index_list.add(numbering)
-        except:
-            self.tb.setText("데이터 형식이 맞지 않습니다.")
+        except Exception as e:
+            self.tb.setText(f"[error] 데이터 형식이 맞지 않습니다.\n\n{e}\n\nrow : {col_list}\n\nprocess data: {data}")
             return
+        # self.tb.setText("[process] 데이터 로드!")
 
         self.data = data
         self.index_list = list(index_list)
-        self.calculate()
-
+        try:
+            self.calculate()
+        except Exception as e:
+            self.tb.setText(e)
 
 if __name__ == '__main__':
   app = QApplication([])
